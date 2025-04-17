@@ -1,2 +1,4 @@
 .zig-cache
 zig-out
+*.s
+return_2
