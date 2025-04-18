@@ -7,8 +7,20 @@ pub fn main() !u8 {
     var args_it = std.process.args();
     _ = args_it.next();
 
+    var option: ?Option = null;
+    var files: std.ArrayList([]const u8) = .init(allocator);
+
     while (args_it.next()) |arg| {
-        processFile(allocator, arg) catch {
+        const option_marker = "--";
+        if (std.mem.startsWith(u8, arg, option_marker)) {
+            option = parseOption(arg[option_marker.len..]) orelse return 1;
+        } else {
+            try files.append(arg);
+        }
+    }
+
+    for (files.items) |file| {
+        processFile(allocator, file, option) catch {
             return 1;
         };
     }
@@ -16,10 +28,10 @@ pub fn main() !u8 {
     return 0;
 }
 
-fn processFile(allocator: Allocator, filepath: []const u8) !void {
+fn processFile(allocator: Allocator, filepath: []const u8, option: ?Option) !void {
     const preprocessed_file = try preprocessFile(allocator, filepath);
 
-    const compiled_file = try compileFile(allocator, preprocessed_file);
+    const compiled_file = try compileFile(allocator, preprocessed_file, option);
     try std.fs.cwd().deleteFile(preprocessed_file);
 
     _ = try assembleAndLinkFile(allocator, compiled_file);
@@ -46,7 +58,8 @@ fn assembleAndLinkFile(allocator: Allocator, filepath: []const u8) ![]const u8 {
     return file_no_ext;
 }
 
-fn compileFile(allocator: Allocator, filepath: []const u8) ![]const u8 {
+fn compileFile(allocator: Allocator, filepath: []const u8, option: ?Option) ![]const u8 {
+    _ = option; // autofix
     if (compile_with_gcc)
         return compileWithGcc(allocator, filepath)
     else
@@ -101,9 +114,27 @@ fn preprocessFile(allocator: Allocator, filepath: []const u8) ![]const u8 {
     return output;
 }
 
-fn removeFileExtention(filepath: []const u8) []const u8 {
-    const dot = std.mem.lastIndexOfScalar(u8, filepath, '.') orelse return filepath;
-    return filepath[0..dot];
+const Option = enum {
+    lex,
+    parse,
+    codegen,
+};
+
+fn parseOption(option: []const u8) ?Option {
+    if (std.mem.eql(u8, option, "lex")) {
+        return .lex;
+    } else if (std.mem.eql(u8, option, "parse")) {
+        return .parse;
+    } else if (std.mem.eql(u8, option, "codegen")) {
+        return .codegen;
+    } else {
+        return null;
+    }
+}
+
+fn removeFileExtention(filename: []const u8) []const u8 {
+    const dot = std.mem.lastIndexOfScalar(u8, filename, '.') orelse return filename;
+    return filename[0..dot];
 }
 
 const std = @import("std");
