@@ -5,15 +5,18 @@ pub fn main() !u8 {
     const allocator = arena.allocator();
 
     var args_it = std.process.args();
-    _ = args_it.next();
+    _ = args_it.skip();
 
     var option: ?Option = null;
+    var output_assembly = false;
     var files: std.ArrayList([]const u8) = .init(allocator);
 
     while (args_it.next()) |arg| {
         const option_marker = "--";
         if (std.mem.startsWith(u8, arg, option_marker)) {
             option = parseOption(arg[option_marker.len..]) orelse return 1;
+        } else if (std.mem.eql(u8, arg, "-S")) {
+            output_assembly = true;
         } else {
             try files.append(arg);
         }
@@ -60,10 +63,26 @@ fn assembleAndLinkFile(allocator: Allocator, filepath: []const u8) ![]const u8 {
 
 fn compileFile(allocator: Allocator, filepath: []const u8, option: ?Option) ![]const u8 {
     _ = option; // autofix
-    if (compile_with_gcc)
-        return compileWithGcc(allocator, filepath)
-    else
-        @panic("unimplemented");
+    if (compile_with_gcc) {
+        return compileWithGcc(allocator, filepath);
+    } else {
+        const file_no_ext = removeFileExtention(filepath);
+        const output = try std.mem.concat(allocator, u8, &.{ file_no_ext, ".s" });
+
+        const argv = &.{
+            "zig-out/bin/compiler",
+            filepath,
+        };
+
+        var compiler = std.process.Child.init(argv, allocator);
+        const compiler_result = try compiler.spawnAndWait();
+
+        if (compiler_result.Exited != 0) {
+            return error.CompilerFailed;
+        }
+
+        return output;
+    }
 }
 
 fn compileWithGcc(allocator: Allocator, filepath: []const u8) ![]const u8 {
@@ -121,11 +140,11 @@ const Option = enum {
 };
 
 fn parseOption(option: []const u8) ?Option {
-    if (std.mem.eql(u8, option, "lex")) {
+    if (std.mem.eql(u8, option, "--lex")) {
         return .lex;
-    } else if (std.mem.eql(u8, option, "parse")) {
+    } else if (std.mem.eql(u8, option, "--parse")) {
         return .parse;
-    } else if (std.mem.eql(u8, option, "codegen")) {
+    } else if (std.mem.eql(u8, option, "--codegen")) {
         return .codegen;
     } else {
         return null;
