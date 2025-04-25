@@ -1,3 +1,5 @@
+const stderr = std.io.getStdErr().writer();
+
 pub fn main() !u8 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     const allocator = arena.allocator();
@@ -7,7 +9,10 @@ pub fn main() !u8 {
 
     const filepath = args_it.next() orelse return 1;
 
-    const file = try std.fs.cwd().openFile(filepath, .{});
+    const file = std.fs.cwd().openFile(filepath, .{}) catch {
+        try stderr.print("failed to open file: {s}\n", .{filepath});
+        return 1;
+    };
     defer file.close();
 
     const stat = try file.stat();
@@ -17,17 +22,73 @@ pub fn main() !u8 {
     var tokens: std.ArrayList(Token) = .init(allocator);
     while (true) {
         const token = lexer.next();
+
+        if (token.type == .invalid) {
+            try stderr.print("invalid token at byte {d}\n", .{token.start});
+            return 1;
+        }
+
         try tokens.append(token);
 
         if (token.type == .eof) break;
     }
 
     for (tokens.items) |token| {
-        std.debug.print("{any}\n", .{token});
+        std.debug.print("{s} - {s}\n", .{ @tagName(token.type), lexer.buffer[token.start..token.end] });
     }
+
+    var parser: Parser = .init(tokens.items);
+    try parser.parseProgram();
 
     return 0;
 }
+
+const Parser = struct {
+    tokens: []const Token,
+    index: usize,
+
+    fn init(tokens: []const Token) Parser {
+        return .{
+            .tokens = tokens,
+            .index = 0,
+        };
+    }
+
+    fn parseProgram(self: *Parser) !void {
+        try self.parseFunction();
+    }
+
+    fn parseFunction(self: *Parser) !void {
+        self.expect(.keyword_int) catch return error.MissingReturnType;
+        self.expect(.identifier) catch return error.MissingIdentifier;
+        self.expect(.l_paren) catch return error.MissingOpeningParen;
+        self.expect(.keyword_void) catch return error.MissingVoid;
+        self.expect(.r_paren) catch return error.MissingClosingParen;
+        self.expect(.l_brace) catch return error.MissingOpeningBrace;
+        try self.parseStatement();
+    }
+
+    fn parseStatement(self: *Parser) !void {
+        self.expect(.keyword_return) catch return error.MissingReturn;
+        try self.parseExpression();
+        self.expect(.semicolon) catch return error.MissingSemiColon;
+    }
+
+    fn parseExpression(self: *Parser) !void {
+        self.expect(.constant) catch return error.MissingConstant;
+    }
+
+    fn expect(self: *Parser, token_type: Token.Type) !void {
+        const token = self.takeToken();
+        if (token.type != token_type)
+            return error.SyntaxError;
+    }
+
+    fn takeToken(self: *Parser) Token {
+        defer self.index += 1;
+        return self.tokens[self.index];
+    }
+};
 
 const Lexer = struct {
     buffer: [:0]const u8,
@@ -40,9 +101,9 @@ const Lexer = struct {
         invalid,
     };
 
-    fn init(data: [:0]const u8) Lexer {
+    fn init(buffer: [:0]const u8) Lexer {
         return .{
-            .buffer = data,
+            .buffer = buffer,
             .index = 0,
         };
     }

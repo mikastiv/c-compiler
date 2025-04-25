@@ -1,4 +1,4 @@
-const compile_with_gcc = true;
+const compile_with_gcc = false;
 
 pub fn main() !u8 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -37,8 +37,10 @@ fn processFile(allocator: Allocator, filepath: []const u8, option: ?Option) !voi
     const compiled_file = try compileFile(allocator, preprocessed_file, option);
     try std.fs.cwd().deleteFile(preprocessed_file);
 
-    _ = try assembleAndLinkFile(allocator, compiled_file);
-    try std.fs.cwd().deleteFile(compiled_file);
+    if (option == null) {
+        _ = try assembleAndLinkFile(allocator, compiled_file);
+        try std.fs.cwd().deleteFile(compiled_file);
+    }
 }
 
 fn assembleAndLinkFile(allocator: Allocator, filepath: []const u8) ![]const u8 {
